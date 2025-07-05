@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.dependencies]
+bevy = "0.16.1"
+log = "0.4.27"
+nevy.git = "https://github.com/space-bandits/nevy"
+rustls = { version = "0.23.5", default-features = false, features = ["std"] }
+
+# Enable a small amount of optimization in the dev profile.
+[profile.dev]
+opt-level = 1
+
+# Enable a large amount of optimization in the dev profile for dependencies.
+[profile.dev.package."*"]
+opt-level = 3

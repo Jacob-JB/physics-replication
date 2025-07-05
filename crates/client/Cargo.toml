@@ -1,0 +1,11 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bevy.workspace = true
+log.workspace = true
+nevy.workspace = true
+common.path = "../common"
+rustls.workspace = true
