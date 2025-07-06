@@ -1,4 +1,8 @@
+use std::time::Duration;
+
 use bevy::prelude::*;
+use common::networking::messages::MessageSendStreamState;
+use nevy::*;
 
 pub mod networking;
 
@@ -28,6 +32,36 @@ fn debug_connect_to_server(
             server_name: "example.server".to_string(),
         },
     ));
+
+    Ok(())
+}
+
+fn debug_send_ping(
+    mut commands: Commands,
+    connection_q: Query<(&ConnectionOf, &QuicConnection, &ConnectionStatus)>,
+    mut endpoint_q: Query<&mut QuicEndpoint>,
+    time: Res<Time>,
+    mut last_ping: Local<Duration>,
+) -> Result {
+    if time.elapsed() - *last_ping < Duration::from_millis(1000) {
+        return Ok(());
+    }
+
+    *last_ping = time.elapsed();
+
+    for (connection_of, connection, status) in &connection_q {
+        let ConnectionStatus::Established = status else {
+            continue;
+        };
+
+        let mut endpoint = endpoint_q.get_mut(**connection_of)?;
+
+        let connection = endpoint.get_connection(connection)?;
+
+        let stream_id = connection.open_stream(Dir::Uni)?;
+
+        let mut stream_state = MessageSendStreamState::new(stream_id);
+    }
 
     Ok(())
 }

@@ -8,4 +8,4 @@ bevy.workspace = true
 log.workspace = true
 nevy.workspace = true
 serde = "1.0"
-bincode = "2.0"
+bincode = { version = "2.0", features = ["serde"] }

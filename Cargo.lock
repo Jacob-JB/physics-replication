@@ -2871,7 +2871,7 @@ dependencies = [
 [[package]]
 name = "nevy"
 version = "0.1.0-dev"
-source = "git+https://github.com/space-bandits/nevy#800a2c91353d7feafd66b5a8a8a67107fbb2061a"
+source = "git+https://github.com/space-bandits/nevy#730eb7b12b30cacc3d43d4e08bade64a0dd20ba6"
 dependencies = [
  "bevy",
  "bytes",
