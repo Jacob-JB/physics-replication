@@ -3,6 +3,17 @@ use nevy::*;
 
 use crate::networking::u16_reader::U16Reader;
 
+/// When this component is inserted onto a connection
+/// handling of incoming streams is done by the stream header system.
+///
+/// Incoming streams that have received headers to identify them can
+/// be retrieved from the `RecvStreamHeaders` component.
+#[derive(Component)]
+pub struct ParseHeaders;
+
+/// Stores incoming streams that are processing headers.
+///
+/// Use `take_stream` to retrieve a stream that has received a particular header.
 #[derive(Component, Default)]
 pub struct RecvStreamHeaders {
     buffers: HashMap<StreamId, RecvStreamHeaderState>,

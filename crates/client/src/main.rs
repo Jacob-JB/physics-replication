@@ -3,7 +3,7 @@ use std::time::Duration;
 use bevy::prelude::*;
 use common::{
     PingMessage,
-    networking::messages::{MessageId, MessageSendStreamState},
+    networking::messages::{MessageId, MessageSender},
 };
 use nevy::*;
 
@@ -12,7 +12,12 @@ pub mod networking;
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins);
+    app.add_plugins(DefaultPlugins.set(bevy::log::LogPlugin {
+        level: bevy::log::Level::DEBUG,
+        filter: bevy::log::DEFAULT_FILTER.to_string()
+            + ",bevy_render=info,bevy_app=info,offset_allocator=info,bevy_asset=info,gilrs=info,bevy_winit=info",
+        ..default()
+    }));
 
     networking::build(&mut app);
 
@@ -22,6 +27,9 @@ fn main() {
     app.run();
 }
 
+#[derive(Component)]
+pub struct ClientConnection;
+
 fn debug_connect_to_server(
     mut commands: Commands,
     endpoint_q: Query<Entity, With<networking::ClientEndpoint>>,
@@ -29,6 +37,7 @@ fn debug_connect_to_server(
     let endpoint_entity = endpoint_q.single()?;
 
     commands.spawn((
+        ClientConnection,
         nevy::ConnectionOf(endpoint_entity),
         nevy::QuicConnectionConfig {
             client_config: networking::create_connection_config(),
@@ -41,43 +50,33 @@ fn debug_connect_to_server(
 }
 
 fn debug_send_ping(
-    connection_q: Query<(&ConnectionOf, &QuicConnection, &ConnectionStatus)>,
-    mut endpoint_q: Query<&mut QuicEndpoint>,
+    connection_q: Query<(Entity, &ConnectionStatus), With<ClientConnection>>,
     time: Res<Time>,
     mut last_ping: Local<Duration>,
     message_id: Res<MessageId<PingMessage>>,
+    mut sender: MessageSender,
 ) -> Result {
+    sender.flush()?;
+
     if time.elapsed() - *last_ping < Duration::from_millis(1000) {
         return Ok(());
     }
 
     *last_ping = time.elapsed();
 
-    for (connection_of, connection, status) in &connection_q {
+    for (connection_entity, status) in &connection_q {
         let ConnectionStatus::Established = status else {
             continue;
         };
 
-        let mut endpoint = endpoint_q.get_mut(**connection_of)?;
-
-        let connection = endpoint.get_connection(connection)?;
-
-        let stream_id = connection.open_stream(Dir::Uni)?;
-
-        let mut stream_state = MessageSendStreamState::new(stream_id);
-
-        stream_state.write(
+        sender.write(
+            connection_entity,
             *message_id,
-            connection,
             &PingMessage {
                 message: "Hello Server!".into(),
             },
             true,
         )?;
-
-        info!("fully sent message: {} ", stream_state.uncongested());
-
-        connection.finish_send_stream(stream_id)?;
     }
 
     Ok(())
