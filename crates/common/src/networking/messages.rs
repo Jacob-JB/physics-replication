@@ -8,7 +8,7 @@ use nevy::*;
 use serde::{Serialize, de::DeserializeOwned};
 
 use crate::networking::{
-    StreamHeader,
+    NetworkingSet, StreamHeader,
     stream_headers::{HeaderedStreamState, RecvStreamHeaders},
     u16_reader::U16Reader,
 };
@@ -25,7 +25,9 @@ pub trait AddMessage {
 impl AddMessage for App {
     fn add_message<T>(&mut self)
     where
-        T: Serialize + DeserializeOwned + Send + Sync + 'static,
+        T: Serialize + DeserializeOwned,
+        MessageId<T>: Resource,
+        ReceivedMessages<T>: Component<Mutability = Mutable>,
     {
         let mut next_message_id = self.world_mut().get_resource_or_init::<NextMessageId>();
 
@@ -36,14 +38,33 @@ impl AddMessage for App {
             _p: PhantomData,
             id: message_id,
         });
+
+        self.add_systems(
+            PostUpdate,
+            (
+                insert_received_message_buffers::<T>.in_set(NetworkingSet::InsertComponents),
+                deserialize_messages::<T>.in_set(NetworkingSet::DeserializeMessages),
+            ),
+        );
     }
 }
 
-#[derive(Resource, Clone, Copy)]
+#[derive(Resource)]
 pub struct MessageId<T> {
     _p: PhantomData<T>,
     id: u16,
 }
+
+impl<T> Clone for MessageId<T> {
+    fn clone(&self) -> Self {
+        Self {
+            _p: PhantomData,
+            id: self.id,
+        }
+    }
+}
+
+impl<T> Copy for MessageId<T> {}
 
 #[derive(Component, Default)]
 pub(crate) struct MessageRecvBuffers {
@@ -62,11 +83,12 @@ enum MessageRecvBufferState {
     ReadingMessage {
         message_id: u16,
         length: u16,
-        buffer: U16Reader,
+        buffer: Vec<u8>,
     },
 }
 
-#[derive(Component, Default)]
+/// Component that exists on all connections and holds the received messages of a certain kind.
+#[derive(Component)]
 pub struct ReceivedMessages<T> {
     messages: VecDeque<T>,
 }
@@ -82,13 +104,26 @@ pub(crate) fn insert_recv_stream_buffers(
     }
 }
 
+pub(crate) fn insert_received_message_buffers<T>(
+    mut commands: Commands,
+    connection_q: Query<Entity, Added<ConnectionOf>>,
+) where
+    ReceivedMessages<T>: Component,
+{
+    for connection_entity in &connection_q {
+        commands
+            .entity(connection_entity)
+            .insert(ReceivedMessages::<T> {
+                messages: VecDeque::new(),
+            });
+    }
+}
+
 pub(crate) fn take_message_streams(
     mut connection_q: Query<(Entity, &mut RecvStreamHeaders, &mut MessageRecvBuffers)>,
 ) {
     for (connection_entity, mut headers, mut buffers) in &mut connection_q {
         while let Some((stream_id, dir)) = headers.take_stream(StreamHeader::Messages) {
-            debug!("Took message stream");
-
             if let Dir::Bi = dir {
                 warn!(
                     "Connection {} opened a bidirectional message stream which should only ever be unidirectional.",
@@ -107,24 +142,107 @@ pub(crate) fn take_message_streams(
 }
 
 pub(crate) fn read_message_streams(
-    mut connection_q: Query<(&ConnectionOf, &QuicConnection, &mut MessageRecvBuffers)>,
+    mut connection_q: Query<(
+        Entity,
+        &ConnectionOf,
+        &QuicConnection,
+        &mut MessageRecvBuffers,
+    )>,
     mut endpoint_q: Query<&mut QuicEndpoint>,
 ) -> Result {
-    for (connection_of, connection, mut buffers) in &mut connection_q {
+    for (connection_entity, connection_of, connection, mut buffers) in &mut connection_q {
+        let buffers = buffers.as_mut();
+
         let mut endpoint = endpoint_q.get_mut(**connection_of)?;
 
         let connection = endpoint.get_connection(connection)?;
 
+        let mut finished = Vec::new();
+
         for (&stream_id, buffer_state) in buffers.streams.iter_mut() {
-            match buffer_state {
-                MessageRecvBufferState::ReadingId { buffer } => todo!(),
-                MessageRecvBufferState::ReadingLength { message_id, buffer } => todo!(),
-                MessageRecvBufferState::ReadingMessage {
-                    message_id,
-                    length,
-                    buffer,
-                } => todo!(),
+            loop {
+                let bytes_needed = match buffer_state {
+                    MessageRecvBufferState::ReadingId { buffer } => buffer.bytes_needed(),
+                    MessageRecvBufferState::ReadingLength { buffer, .. } => buffer.bytes_needed(),
+                    MessageRecvBufferState::ReadingMessage { buffer, length, .. } => {
+                        *length as usize - buffer.len()
+                    }
+                };
+
+                let chunk = match connection.read_recv_stream(stream_id, bytes_needed, true) {
+                    Ok(Some(chunk)) => chunk,
+                    Ok(None) => {
+                        finished.push(stream_id);
+
+                        break;
+                    }
+                    Err(StreamReadError::Blocked) => break,
+                    Err(StreamReadError::Reset(code)) => {
+                        warn!(
+                            "A stream on connection {} was reset with code {} before sending a header",
+                            connection_entity, code,
+                        );
+
+                        finished.push(stream_id);
+
+                        break;
+                    }
+                    Err(err) => {
+                        return Err(err.into());
+                    }
+                };
+
+                match buffer_state {
+                    MessageRecvBufferState::ReadingId { buffer } => {
+                        buffer.write(&chunk.data);
+
+                        let Some(message_id) = buffer.finish() else {
+                            continue;
+                        };
+
+                        *buffer_state = MessageRecvBufferState::ReadingLength {
+                            message_id,
+                            buffer: U16Reader::new(),
+                        };
+                    }
+                    MessageRecvBufferState::ReadingLength { message_id, buffer } => {
+                        buffer.write(&chunk.data);
+
+                        let Some(length) = buffer.finish() else {
+                            continue;
+                        };
+
+                        *buffer_state = MessageRecvBufferState::ReadingMessage {
+                            message_id: *message_id,
+                            length,
+                            buffer: Vec::new(),
+                        };
+                    }
+                    MessageRecvBufferState::ReadingMessage {
+                        message_id,
+                        length,
+                        buffer,
+                    } => {
+                        buffer.extend(chunk.data);
+
+                        if buffer.len() != *length as usize {
+                            continue;
+                        }
+
+                        let message = std::mem::take(buffer);
+
+                        buffers
+                            .messages
+                            .entry(*message_id)
+                            .or_default()
+                            .push_back(message.into_boxed_slice());
+                    }
+                }
             }
+        }
+
+        for stream_id in finished {
+            buffers.streams.remove(&stream_id);
         }
     }
 
@@ -135,11 +253,43 @@ pub(crate) fn deserialize_messages<T>(
     message_id: Res<MessageId<T>>,
     mut connection_q: Query<(&mut MessageRecvBuffers, &mut ReceivedMessages<T>)>,
 ) where
+    T: DeserializeOwned,
     MessageId<T>: Resource,
     ReceivedMessages<T>: Component<Mutability = Mutable>,
 {
+    for (mut serialized_buffer, mut deserialized_buffer) in connection_q.iter_mut() {
+        let Some(buffer) = serialized_buffer.messages.get_mut(&message_id.id) else {
+            continue;
+        };
+
+        for bytes in buffer.drain(..) {
+            match bincode::serde::decode_from_slice(&bytes, bincode_config()) {
+                Ok((message, _)) => {
+                    deserialized_buffer.messages.push_back(message);
+                }
+                Err(error) => {
+                    error!(
+                        "Failed to deserialize \"{}\" message: {}",
+                        std::any::type_name::<T>(),
+                        error
+                    );
+                }
+            }
+        }
+    }
 }
 
+impl<T> ReceivedMessages<T> {
+    pub fn drain(&mut self) -> impl Iterator<Item = T> {
+        self.messages.drain(..)
+    }
+
+    pub fn next(&mut self) -> Option<T> {
+        self.messages.pop_front()
+    }
+}
+
+/// State machine for a stream that sends messages.
 pub struct MessageSendStreamState {
     stream: HeaderedStreamState,
     buffer: VecDeque<u8>,
@@ -181,7 +331,7 @@ impl MessageSendStreamState {
     /// See `Self::uncongested`.
     ///
     /// If `queue` is false and the stream is congested the message will not be written and `Ok(false)` will be returned.
-    pub fn send<T>(
+    pub fn write<T>(
         &mut self,
         message_id: MessageId<T>,
         connection: &mut ConnectionState,
@@ -197,8 +347,7 @@ impl MessageSendStreamState {
         }
 
         // serialize
-        let message_data = match bincode::serde::encode_to_vec(message, bincode::config::standard())
-        {
+        let message_data = match bincode::serde::encode_to_vec(message, bincode_config()) {
             Ok(data) => data,
             Err(err) => panic!("Failed to serialize message: {}", err),
         };
@@ -217,4 +366,8 @@ impl MessageSendStreamState {
 
         Ok(true)
     }
+}
+
+fn bincode_config() -> bincode::config::Configuration {
+    bincode::config::standard()
 }

@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use common::networking::messages::MessageSendStreamState;
+use common::{
+    PingMessage,
+    networking::messages::{MessageId, MessageSendStreamState},
+};
 use nevy::*;
 
 pub mod networking;
@@ -14,6 +17,7 @@ fn main() {
     networking::build(&mut app);
 
     app.add_systems(PostStartup, debug_connect_to_server);
+    app.add_systems(Update, debug_send_ping);
 
     app.run();
 }
@@ -37,11 +41,11 @@ fn debug_connect_to_server(
 }
 
 fn debug_send_ping(
-    mut commands: Commands,
     connection_q: Query<(&ConnectionOf, &QuicConnection, &ConnectionStatus)>,
     mut endpoint_q: Query<&mut QuicEndpoint>,
     time: Res<Time>,
     mut last_ping: Local<Duration>,
+    message_id: Res<MessageId<PingMessage>>,
 ) -> Result {
     if time.elapsed() - *last_ping < Duration::from_millis(1000) {
         return Ok(());
@@ -61,6 +65,19 @@ fn debug_send_ping(
         let stream_id = connection.open_stream(Dir::Uni)?;
 
         let mut stream_state = MessageSendStreamState::new(stream_id);
+
+        stream_state.write(
+            *message_id,
+            connection,
+            &PingMessage {
+                message: "Hello Server!".into(),
+            },
+            true,
+        )?;
+
+        info!("fully sent message: {} ", stream_state.uncongested());
+
+        connection.finish_send_stream(stream_id)?;
     }
 
     Ok(())

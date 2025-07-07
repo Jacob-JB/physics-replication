@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "async-channel"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "16c74e56284d2188cabb6ad99603d1ace887a5d7e7b695d01b728155ed9ed427"
+checksum = "924ed96dd52d1b75e9c1a3e6275715fd320f5f9439fb5a4a11fa51f4221158d2"
 dependencies = [
  "concurrent-queue",
  "event-listener-strategy",
@@ -1429,9 +1429,9 @@ dependencies = [
 
 [[package]]
 name = "blocking"
-version = "1.6.1"
+version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "703f41c54fc768e63e091340b424302bb1c29ef4aa0c7f10fe849dfb114d29ea"
+checksum = "e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21"
 dependencies = [
  "async-channel",
  "async-task",
@@ -2871,7 +2871,7 @@ dependencies = [
 [[package]]
 name = "nevy"
 version = "0.1.0-dev"
-source = "git+https://github.com/space-bandits/nevy#730eb7b12b30cacc3d43d4e08bade64a0dd20ba6"
+source = "git+https://github.com/space-bandits/nevy#e70ef85cd57e67e8a13a0887fe122f4feba24149"
 dependencies = [
  "bevy",
  "bytes",

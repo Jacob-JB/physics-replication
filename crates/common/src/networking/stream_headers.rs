@@ -1,13 +1,15 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 use nevy::*;
 
+use crate::networking::u16_reader::U16Reader;
+
 #[derive(Component, Default)]
 pub struct RecvStreamHeaders {
     buffers: HashMap<StreamId, RecvStreamHeaderState>,
 }
 
 enum RecvStreamHeaderState {
-    Reading { dir: Dir, buffer: Vec<u8> },
+    Reading { dir: Dir, buffer: U16Reader },
     HeaderReceived { dir: Dir, header: u16 },
 }
 
@@ -42,13 +44,13 @@ pub(crate) fn read_stream_headers(
                     stream_id,
                     RecvStreamHeaderState::Reading {
                         dir,
-                        buffer: Vec::new(),
+                        buffer: U16Reader::new(),
                     },
                 );
             }
         }
 
-        let mut failed_streams = Vec::new();
+        let mut finished_streams = Vec::new();
 
         for (&stream_id, state) in buffers.buffers.iter_mut() {
             let RecvStreamHeaderState::Reading { dir, buffer } = state else {
@@ -56,21 +58,14 @@ pub(crate) fn read_stream_headers(
             };
 
             loop {
-                match connection.read_recv_stream(stream_id, 2 - buffer.len(), true) {
+                match connection.read_recv_stream(stream_id, buffer.bytes_needed(), true) {
                     Ok(Some(chunk)) => {
-                        buffer.extend(chunk.data);
+                        buffer.write(&chunk.data);
 
-                        debug_assert!(buffer.len() <= 2, "should never read more than two bytes");
-
-                        if buffer.len() != 2 {
-                            continue;
-                        }
-
-                        let Ok(&buffer) = buffer.as_slice().try_into() else {
+                        let Some(header) = buffer.finish() else {
                             continue;
                         };
 
-                        let header = u16::from_be_bytes(buffer);
                         let dir = *dir;
 
                         *state = RecvStreamHeaderState::HeaderReceived { dir, header };
@@ -83,7 +78,7 @@ pub(crate) fn read_stream_headers(
                             connection_entity
                         );
 
-                        failed_streams.push(stream_id);
+                        finished_streams.push(stream_id);
                     }
                     Err(StreamReadError::Blocked) => break,
                     Err(StreamReadError::Reset(code)) => {
@@ -92,13 +87,17 @@ pub(crate) fn read_stream_headers(
                             connection_entity, code,
                         );
 
-                        failed_streams.push(stream_id);
+                        finished_streams.push(stream_id);
                     }
                     Err(err) => {
                         return Err(err.into());
                     }
                 }
             }
+        }
+
+        for stream_id in finished_streams {
+            buffers.buffers.remove(&stream_id);
         }
     }
 
