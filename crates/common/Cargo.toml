@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 bevy.workspace = true
 log.workspace = true
+
 nevy.workspace = true
 serde = "1.0"
 bincode = { version = "2.0", features = ["serde"] }
+
+avian3d.workspace = true
