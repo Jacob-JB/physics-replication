@@ -1,9 +1,15 @@
 use bevy::prelude::*;
-use common::networking::NetworkingPlugin;
+use common::networking::add_protocol;
 use nevy::*;
 
 pub fn build(app: &mut App) {
-    app.add_plugins(NetworkingPlugin);
+    app.add_plugins((
+        NevyPlugin::default(),
+        NevyHeaderPlugin::default(),
+        NevyMessagesPlugin::default(),
+    ));
+
+    add_protocol(app);
 
     app.add_systems(Startup, spawn_endpoint);
 }
@@ -14,6 +20,8 @@ pub struct ClientEndpoint;
 fn spawn_endpoint(mut commands: Commands) -> Result {
     commands.spawn((
         ClientEndpoint,
+        EndpointWithHeaderedConnections,
+        EndpointWithMessageConnections,
         QuicEndpoint::new(
             "0.0.0.0:0",
             quinn_proto::EndpointConfig::default(),

@@ -3053,13 +3053,15 @@ dependencies = [
 [[package]]
 name = "nevy"
 version = "0.1.0-dev"
-source = "git+https://github.com/space-bandits/nevy#e70ef85cd57e67e8a13a0887fe122f4feba24149"
+source = "git+https://github.com/space-bandits/nevy#67ea7a93a2c57600d2c5d545a2a31ad23b81f3e1"
 dependencies = [
  "bevy",
+ "bincode",
  "bytes",
  "log",
  "quinn-proto",
  "quinn-udp",
+ "serde",
  "thiserror 2.0.12",
 ]
 
@@ -6012,9 +6014,9 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xml-rs"
-version = "0.8.26"
+version = "0.8.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a62ce76d9b56901b19a74f19431b0d8b3bc7ca4ad685a746dfd78ca8f4fc6bda"
+checksum = "6fd8403733700263c6eb89f192880191f1b83e332f7a20371ddcf421c4a337c7"
 
 [[package]]
 name = "yasna"

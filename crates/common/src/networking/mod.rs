@@ -1,58 +1,9 @@
 use bevy::prelude::*;
 use nevy::*;
+use serde::{Deserialize, Serialize};
 
-pub mod messages;
-pub mod protocol;
-pub mod stream_headers;
-pub mod u16_reader;
-
-#[derive(SystemSet, Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum NetworkingSet {
-    InsertComponents,
-    ReadHeaders,
-    ReadMessages,
-    DeserializeMessages,
-}
-
-pub struct NetworkingPlugin;
-
-impl Plugin for NetworkingPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(NevyPlugin::default());
-
-        protocol::build_protocol(app);
-
-        app.configure_sets(
-            PostUpdate,
-            (
-                NetworkingSet::InsertComponents,
-                NetworkingSet::ReadHeaders,
-                NetworkingSet::ReadMessages,
-                NetworkingSet::DeserializeMessages,
-            )
-                .chain()
-                .after(UpdateEndpoints),
-        );
-
-        app.add_systems(
-            PostUpdate,
-            (
-                (
-                    stream_headers::insert_stream_header_buffers,
-                    messages::insert_recv_stream_buffers,
-                )
-                    .in_set(NetworkingSet::InsertComponents),
-                stream_headers::read_stream_headers.in_set(NetworkingSet::ReadHeaders),
-                (
-                    messages::take_message_streams,
-                    messages::read_message_streams,
-                )
-                    .in_set(NetworkingSet::ReadMessages),
-            ),
-        );
-
-        app.add_systems(Update, log_connection_status);
-    }
+pub fn add_protocol(app: &mut App) {
+    app.add_message::<PingMessage>();
 }
 
 pub enum StreamHeader {
@@ -65,7 +16,7 @@ impl From<StreamHeader> for u16 {
     }
 }
 
-fn log_connection_status(
+pub fn log_connection_status(
     connection_q: Query<
         (Entity, &ConnectionOf, &QuicConnection, &ConnectionStatus),
         Changed<ConnectionStatus>,
@@ -99,4 +50,9 @@ fn log_connection_status(
     }
 
     Ok(())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PingMessage {
+    pub message: String,
 }

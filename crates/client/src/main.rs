@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
-use common::{
-    PingMessage,
-    networking::messages::{MessageId, MessageSender},
-};
+use common::networking::{PingMessage, StreamHeader};
 use nevy::*;
 
 pub mod networking;
@@ -70,6 +67,7 @@ fn debug_send_ping(
         };
 
         sender.write(
+            StreamHeader::Messages,
             connection_entity,
             *message_id,
             &PingMessage {
