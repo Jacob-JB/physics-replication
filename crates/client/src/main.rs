@@ -61,10 +61,14 @@ fn debug_send_ping(
 
     *last_ping = time.elapsed();
 
+    info!("Sending pings");
+
     for (connection_entity, status) in &connection_q {
         let ConnectionStatus::Established = status else {
             continue;
         };
+
+        info!("Sending ping on {}", connection_entity);
 
         sender.write(
             StreamHeader::Messages,

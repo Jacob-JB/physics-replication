@@ -3053,7 +3053,6 @@ dependencies = [
 [[package]]
 name = "nevy"
 version = "0.1.0-dev"
-source = "git+https://github.com/space-bandits/nevy#67ea7a93a2c57600d2c5d545a2a31ad23b81f3e1"
 dependencies = [
  "bevy",
  "bincode",

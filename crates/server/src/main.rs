@@ -1,5 +1,6 @@
 use bevy::prelude::*;
-use common::{PingMessage, networking::messages::ReceivedMessages};
+use common::networking::PingMessage;
+use nevy::*;
 
 pub mod networking;
 
